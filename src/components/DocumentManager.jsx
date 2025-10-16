@@ -18,10 +18,18 @@ export default function DocumentManager({ session }) {
   const backendBase = backendEnv || (import.meta.env.DEV ? DEFAULT_DEV_BACKEND : '');
 
   const buildAdminUrl = useCallback((p = '/api/admin/documents') => {
-    // ensure leading slash
+    // ensure leading slash on path
     const path = p.startsWith('/') ? p : `/${p}`;
-    if (backendBase) return `${backendBase}${path}`;
-    return path; // fallback (if using proxy)
+
+    if (!backendBase) {
+      // fallback relative path (proxy / same origin)
+      return path;
+    }
+
+    // remove trailing slash from backendBase, if any
+    const base = backendBase.endsWith('/') ? backendBase.slice(0, -1) : backendBase;
+
+    return `${base}${path}`; // now safe: base has no trailing slash, path has leading slash
   }, [backendBase]);
 
   useEffect(() => {
