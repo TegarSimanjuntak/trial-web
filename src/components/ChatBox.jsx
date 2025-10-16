@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { joinApiUrl } from '../utils/url';
 
 /**
- * ChatBox (clean) - versi minimal: tidak menampilkan riwayat.
- * - Chat hanya berisi messages saat ini (tidak auto-load riwayat dari DB).
- * - Masih menginformasikan parent via onTopChunksChange(normalizedChunks, hasCtx).
+ * ChatBox (clean) - versi minimal namun lebih robust
+ * - Menghindari double-slash di URL
+ * - Menangani response non-JSON (HTML 404)
+ * - Membatalkan request sebelumnya jika user cepat mengirim
  */
 
 function stripGenerativePreface(text) {
@@ -25,8 +26,8 @@ export default function ChatBox({ session, onTopChunksChange = () => {} }) {
   const [messages, setMessages] = useState([]); // {role, content}
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-
   const bottomRef = useRef();
+  const abortRef = useRef(null);
 
   useEffect(() => {
     // Clear chat when session changes (if logged out or new login)
@@ -34,10 +35,25 @@ export default function ChatBox({ session, onTopChunksChange = () => {} }) {
     setInput('');
     setLoading(false);
     try { onTopChunksChange([], false); } catch (e) {}
+    // cleanup abort if session changed
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+      abortRef.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   useEffect(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
+
+  useEffect(() => {
+    return () => {
+      // cleanup on unmount
+      if (abortRef.current) {
+        try { abortRef.current.abort(); } catch {}
+        abortRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleSend(e) {
     e?.preventDefault();
@@ -52,16 +68,47 @@ export default function ChatBox({ session, onTopChunksChange = () => {} }) {
     // clear parent top-k immediately
     try { onTopChunksChange([], false); } catch (e) {}
 
+    // abort previous request if any
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+      abortRef.current = null;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/chat`, {
+      const backendBase = import.meta.env.VITE_BACKEND_URL || '';
+      const url = joinApiUrl(backendBase, '/api/chat');
+
+      const headers = { 'Content-Type': 'application/json' };
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+
+      const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`
-        },
-        body: JSON.stringify({ question: q })
+        headers,
+        body: JSON.stringify({ question: q }),
+        signal: controller.signal
       });
-      const data = await res.json();
+
+      // read text first (safer) so we can debug HTML 404 or other non-json bodies
+      const text = await res.text().catch(() => '');
+      const contentType = res.headers.get('content-type') || '';
+
+      if (!res.ok) {
+        console.error('API responded with non-OK status', res.status, text);
+        setMessages(prev => [...prev, { role: 'assistant', content: `Server error: ${res.status}. Lihat console untuk detail.` }]);
+        try { onTopChunksChange([], false); } catch (e) {}
+        return;
+      }
+
+      if (!contentType.includes('application/json')) {
+        console.error('Expected JSON but got:', contentType, text);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Response server bukan JSON (cek server logs).' }]);
+        try { onTopChunksChange([], false); } catch (e) {}
+        return;
+      }
+
+      const data = text ? JSON.parse(text) : {};
 
       // normalize chunks (prefer top_chunks)
       const chunksSource = Array.isArray(data?.top_chunks) && data.top_chunks.length > 0
@@ -96,13 +143,18 @@ export default function ChatBox({ session, onTopChunksChange = () => {} }) {
 
       // inform parent of top-k & context
       try { onTopChunksChange(normalized, hasCtx); } catch (e) {}
-
     } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Terjadi error jaringan.' }]);
-      try { onTopChunksChange([], false); } catch (e) {}
+      if (err.name === 'AbortError') {
+        console.warn('Request aborted');
+      } else {
+        console.error('Network / unexpected error while calling /api/chat', err);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Terjadi error jaringan.' }]);
+        try { onTopChunksChange([], false); } catch (e) {}
+      }
     } finally {
       setLoading(false);
+      // clear abortRef if still pointing to same controller
+      if (abortRef.current === controller) abortRef.current = null;
     }
   }
 
@@ -115,7 +167,7 @@ export default function ChatBox({ session, onTopChunksChange = () => {} }) {
       {/* Simplified Controls (no history controls) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 13, color: '#666' }}>
-          {session ? `Login sebagai ${session.user.email || session.user.id}` : 'Belum login'}
+          {session ? `Login sebagai ${session?.user?.email ?? session?.user?.id ?? 'user'}` : 'Belum login'}
         </div>
       </div>
 
