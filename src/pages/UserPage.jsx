@@ -1,12 +1,15 @@
+// src/pages/UserPage.jsx
 import React, { useEffect, useState } from 'react';
 import ChatBox from '../components/ChatBox';
 import { supabase } from '../lib/supabase';
 
 /**
- * UserPage (compact history)
- * - Single "Riwayat" button -> opens modal with list of chats
- * - Click chat -> modal shows messages for that chat (with Back button)
- * - Separate card/button for Speech-to-Speech page navigation
+ * UserPage (UI putih & rapi)
+ * - Layout 2 kolom (chat besar di kiri, panel info di kanan)
+ * - Tema putih/abu lembut, card dengan shadow
+ * - Modal riwayat tetap sama fungsinya
+ * - Top-k source tetap sama logika & datanya
+ * - Navigasi Speech-to-Speech tetap sama
  */
 
 export default function UserPage({ session, profile, navigateToSpeechPage }) {
@@ -18,19 +21,17 @@ export default function UserPage({ session, profile, navigateToSpeechPage }) {
   const [chats, setChats] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
 
-  // Modal states: modalVisible + mode('list'|'messages') + selectedChat + messages
+  // Modal states
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState('list'); // 'list' atau 'messages'
-  const [selectedChat, setSelectedChat] = useState(null); // {id, title, created_at}
+  const [selectedChat, setSelectedChat] = useState(null);
   const [modalMessages, setModalMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   useEffect(() => {
     if (session) fetchChats();
-    else {
-      setChats([]);
-    }
-    // eslint-disable-next-line
+    else setChats([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   async function fetchChats() {
@@ -42,7 +43,7 @@ export default function UserPage({ session, profile, navigateToSpeechPage }) {
         .select('id, title, created_at')
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
-        .limit(200); // batas wajar; UI paginasi bisa ditambah kalau perlu
+        .limit(200);
       if (error) throw error;
       setChats(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -53,13 +54,11 @@ export default function UserPage({ session, profile, navigateToSpeechPage }) {
     }
   }
 
-  // open modal (default to list)
   function openHistoryModal() {
     setModalMode('list');
     setSelectedChat(null);
     setModalMessages([]);
     setModalVisible(true);
-    // refresh list whenever modal dibuka (optional)
     fetchChats();
   }
 
@@ -70,7 +69,6 @@ export default function UserPage({ session, profile, navigateToSpeechPage }) {
     setModalMessages([]);
   }
 
-  // ketika klik chat di daftar
   async function openChatMessages(chat) {
     if (!chat) return;
     setSelectedChat(chat);
@@ -112,167 +110,790 @@ export default function UserPage({ session, profile, navigateToSpeechPage }) {
 
   const PREVIEW_LENGTH = 300;
 
+  const userName =
+    profile?.full_name ||
+    profile?.name ||
+    profile?.username ||
+    'Mahasiswa';
+
   return (
-    <div className="container" style={{ padding: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 12 }}>
-        <div>
-          <div className="card">
-            <h3 style={{ marginTop: 0 }}>Chat</h3>
-            <ChatBox session={session} profile={profile} onTopChunksChange={handleTopChunksChange} />
-          </div>
-        </div>
+    <>
+      {/* Styling khusus UserPage */}
+      <style>
+        {`
+          .fade-in-up {
+            opacity: 0;
+            transform: translateY(8px);
+            animation: fadeInUp 0.35s ease-out forwards;
+          }
+          @keyframes fadeInUp {
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Button Riwayat (single) */}
-          <div className="card" style={{ padding: 12 }}>
-            <h4 style={{ margin: 0 }}>Riwayat</h4>
-            <p className="small" style={{ marginTop: 6 }}>Lihat semua riwayat chat kamu dalam popup.</p>
-            <div style={{ marginTop: 8 }}>
-              <button onClick={openHistoryModal}>Buka Riwayat</button>
-              <button onClick={fetchChats} style={{ marginLeft: 8 }}>Refresh</button>
+          .user-root {
+            min-height: 100vh;
+            background: #f3f4f6;
+            padding: 24px 16px;
+            display: flex;
+            justify-content: center;
+          }
+          .user-shell {
+            width: 100%;
+            max-width: 1180px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+          }
+          .user-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+          }
+          .user-header-title {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            color: #111827;
+          }
+          .user-header-sub {
+            margin: 4px 0 0;
+            font-size: 13px;
+            color: #6b7280;
+          }
+          .user-pill {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4f46e5;
+            white-space: nowrap;
+          }
+
+          .user-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 2.2fr) minmax(320px, 1fr);
+            gap: 16px;
+          }
+          .user-card {
+            background: #ffffff;
+            border-radius: 18px;
+            box-shadow: 0 18px 40px rgba(15,23,42,0.06);
+            border: 1px solid #e5e7eb;
+            padding: 16px 16px 18px;
+          }
+          .user-card-title {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #111827;
+          }
+          .user-card-sub {
+            margin: 6px 0 0;
+            font-size: 13px;
+            color: #6b7280;
+          }
+
+          .btn-primary {
+            border: none;
+            border-radius: 999px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(90deg, #4f46e5, #22c55e);
+            color: #ffffff;
+            box-shadow: 0 10px 25px rgba(79,70,229,0.35);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+          }
+          .btn-primary:hover {
+            filter: brightness(1.03);
+            box-shadow: 0 12px 30px rgba(79,70,229,0.4);
+          }
+          .btn-primary:active {
+            transform: scale(0.97);
+            box-shadow: 0 8px 18px rgba(79,70,229,0.3);
+          }
+
+          .btn-soft {
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            background: #ffffff;
+            color: #374151;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+          }
+          .btn-soft:hover {
+            background: #f9fafb;
+            border-color: #d1d5db;
+          }
+          .btn-soft:active {
+            transform: scale(0.97);
+          }
+
+          .btn-ghost {
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            color: #374151;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            transition: background 0.12s ease, border-color 0.12s ease;
+          }
+          .btn-ghost:hover {
+            background: #f3f4f6;
+            border-color: #d1d5db;
+          }
+
+          .badge-context {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+          }
+          .badge-context-yes {
+            background: #dcfce7;
+            color: #166534;
+          }
+          .badge-context-no {
+            background: #fee2e2;
+            color: #b91c1c;
+          }
+
+          .chunk-card {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 10px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+          }
+
+          .history-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15,23,42,0.32);
+            z-index: 9999;
+            padding: 12px;
+          }
+          .history-modal-body {
+            width: 100%;
+            maxWidth: 920px;
+            max-height: 85vh;
+            overflow: auto;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 14px 14px 16px;
+            box-shadow: 0 18px 45px rgba(15,23,42,0.35);
+          }
+
+          @media (max-width: 900px) {
+            .user-grid {
+              grid-template-columns: minmax(0, 1fr);
+            }
+          }
+        `}
+      </style>
+
+      <div className="user-root">
+        <div className="user-shell fade-in-up">
+          {/* Header atas */}
+          <header className="user-header">
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: 1.3,
+                  textTransform: 'uppercase',
+                  color: '#6b7280',
+                }}
+              >
+                Tutor Cerdas
+              </p>
+              <h1 className="user-header-title">
+                Halo, {userName} 👋
+              </h1>
+              <p className="user-header-sub">
+                Ajukan pertanyaan tentang materi kuliahmu. Riwayat dan sumber
+                jawaban dicatat rapi di samping.
+              </p>
             </div>
-          </div>
 
-          {/* Speech-to-speech navigation card (terpisah) */}
-          <div className="card" style={{ padding: 12 }}>
-            <h4 style={{ margin: 0 }}>Speech-to-Speech</h4>
-            <p className="small" style={{ marginTop: 6 }}>Beralih ke halaman Speech-to-Speech untuk fitur suara.</p>
-            <div style={{ marginTop: 8 }}>
-              {/* navigateToSpeechPage optional prop; jika tidak ada, gunakan window.location */}
-              <button onClick={() => {
-                if (typeof navigateToSpeechPage === 'function') navigateToSpeechPage();
-                else window.location.href = '/speech'; // sesuaikan route kalau perlu
-              }}>Buka Speech-to-Speech</button>
-            </div>
-          </div>
-
-          {/* Top-k Source card (jawaban terakhir) */}
-          <div className="card" style={{ padding: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h4 style={{ margin: 0 }}>Top-k Source</h4>
-                <p className="small" style={{ marginTop: 6 }}>Sumber relevan untuk jawaban terakhir (1–3 chunk).</p>
-              </div>
-              <div>
-                <button onClick={clearTopK}>Clear</button>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 13 }}>
-                {hasContext ? <strong style={{ color: '#0a74da' }}>Konteks: YA</strong> : <strong style={{ color: '#b33' }}>Konteks: TIDAK</strong>}
-              </div>
-
-              <div style={{ marginTop: 8 }}>
-                {(!topChunks || topChunks.length === 0) ? (
-                  <div style={{ color: '#666', fontSize: 13 }}>Tidak ada sumber relevan untuk jawaban terakhir.</div>
-                ) : (
-                  topChunks.map((c, idx) => {
-                    const isExpanded = !!expanded[idx];
-                    const text = c.text || '';
-                    const preview = text.length > PREVIEW_LENGTH ? text.slice(0, PREVIEW_LENGTH) + '…' : text;
-                    return (
-                      <div key={idx} style={{ marginBottom: 10, padding: 10, borderRadius: 6, background: '#fafafa', border: '1px solid #eee' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                          <div style={{ fontWeight: 600 }}>{idx + 1}. {c.document_title}</div>
-                          <div style={{ fontSize: 12, color: '#666' }}>
-                            idx: {c.chunk_index} — sim: {c.similarity === null || typeof c.similarity === 'undefined' ? 'n/a' : Number(c.similarity).toFixed(4)}
-                          </div>
-                        </div>
-
-                        <div style={{ marginTop: 8, whiteSpace: 'pre-wrap', fontSize: 13, color: '#222' }}>
-                          {isExpanded ? text : preview}
-                        </div>
-
-                        <div style={{ marginTop: 8 }}>
-                          {text.length > PREVIEW_LENGTH && (
-                            <button onClick={() => toggleExpand(idx)} style={{ marginRight: 8 }}>
-                              {isExpanded ? 'View less' : 'View more'}
-                            </button>
-                          )}
-                          <button onClick={() => navigator.clipboard.writeText(text)} style={{ marginRight: 8 }}>Salin isi chunk</button>
-                          <button onClick={() => navigator.clipboard.writeText(`${c.document_title} (sim:${c.similarity})`)}>Salin meta</button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Modal: digunakan untuk BOTH list view dan messages view */}
-      {modalVisible && (
-        <div style={{
-          position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.5)', zIndex: 9999, padding: 12
-        }}>
-          <div style={{ width: '100%', maxWidth: 920, maxHeight: '85vh', overflow: 'auto', background: '#fff', borderRadius: 8, padding: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h3 style={{ margin: 0 }}>{modalMode === 'list' ? 'Daftar Riwayat Chat' : (selectedChat?.title || 'Chat')}</h3>
-                {modalMode === 'list' ? (
-                  <div className="small" style={{ color: '#666' }}>{chats.length} chat ditemukan.</div>
-                ) : (
-                  <div className="small" style={{ color: '#666' }}>{selectedChat ? new Date(selectedChat.created_at).toLocaleString() : ''}</div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                {modalMode === 'messages' && <button onClick={() => { setModalMode('list'); setSelectedChat(null); setModalMessages([]); }}>Kembali</button>}
-                <button onClick={closeModal}>Tutup</button>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              {modalMode === 'list' ? (
-                // list view
-                <div>
-                  {loadingChats ? (
-                    <div className="small">Memuat riwayat...</div>
-                  ) : chats.length === 0 ? (
-                    <div style={{ color: '#666' }}>Belum ada riwayat chat tersimpan.</div>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {chats.map(c => (
-                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 10, borderRadius: 6, border: '1px solid #eee', background: '#fafafa' }}>
-                          <div>
-                            <div style={{ fontWeight: 600 }}>{c.title || 'Chat tanpa judul'}</div>
-                            <div className="small" style={{ color: '#666' }}>{new Date(c.created_at).toLocaleString()}</div>
-                          </div>
-                          <div>
-                            <button onClick={() => openChatMessages(c)}>Buka</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                // messages view
-                <div>
-                  {loadingMessages ? (
-                    <div className="small">Memuat pesan...</div>
-                  ) : modalMessages.length === 0 ? (
-                    <div style={{ color: '#666' }}>Tidak ada pesan untuk chat ini.</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {modalMessages.map((m, i) => (
-                        <div key={i} style={{ padding: 10, borderRadius: 6, background: m.role === 'user' ? '#e6f0ff' : '#f4f4f4' }}>
-                          <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
-                          <div className="small" style={{ marginTop: 6, color: '#666' }}>{new Date(m.created_at).toLocaleString()}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: 6,
+              }}
+            >
+              <span className="user-pill">Student Mode</span>
+              {profile?.role && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: '#9ca3af',
+                  }}
+                >
+                  Role: {profile.role}
+                </span>
               )}
             </div>
+          </header>
+
+          {/* Grid utama: Chat + panel samping */}
+          <div className="user-grid">
+            {/* Kolom kiri: Chat */}
+            <div>
+              <div className="user-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div>
+                    <h2 className="user-card-title">Chat dengan Tutor Cerdas</h2>
+                    <p className="user-card-sub">
+                      Tanyakan konsep, tugas, atau soal sulit. Sistem akan
+                      mencari referensi dari dokumen yang sudah dimasukkan.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 6 }}>
+                  <ChatBox
+                    session={session}
+                    profile={profile}
+                    onTopChunksChange={handleTopChunksChange}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Kolom kanan: Info panel (Riwayat, Speech, Top-k) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Card Riwayat */}
+              <div className="user-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <div>
+                    <h3 className="user-card-title" style={{ fontSize: 15 }}>
+                      Riwayat Chat
+                    </h3>
+                    <p className="user-card-sub">
+                      Lihat, buka kembali, dan pelajari ulang percakapan
+                      sebelumnya.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: 'flex',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <button className="btn-primary" onClick={openHistoryModal}>
+                    Buka Riwayat
+                  </button>
+                  <button className="btn-soft" onClick={fetchChats}>
+                    Refresh
+                  </button>
+                </div>
+
+                {loadingChats && (
+                  <p
+                    style={{
+                      marginTop: 8,
+                      fontSize: 12,
+                      color: '#6b7280',
+                    }}
+                  >
+                    Memuat riwayat...
+                  </p>
+                )}
+                {!loadingChats && chats.length > 0 && (
+                  <p
+                    style={{
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: '#9ca3af',
+                    }}
+                  >
+                    {chats.length} chat tersimpan.
+                  </p>
+                )}
+              </div>
+
+              {/* Card Speech-to-Speech */}
+              <div className="user-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                  }}
+                >
+                  <div>
+                    <h3 className="user-card-title" style={{ fontSize: 15 }}>
+                      Speech-to-Speech
+                    </h3>
+                    <p className="user-card-sub">
+                      Gunakan mode suara untuk berbicara langsung dengan Tutor
+                      Cerdas. Cocok untuk latihan lisan & penjelasan cepat.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      if (typeof navigateToSpeechPage === 'function') {
+                        navigateToSpeechPage();
+                      } else {
+                        window.location.href = '/speech';
+                      }
+                    }}
+                  >
+                    Buka Speech-to-Speech
+                  </button>
+                </div>
+              </div>
+
+              {/* Card Top-k Source */}
+              <div className="user-card">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <div>
+                    <h3 className="user-card-title" style={{ fontSize: 15 }}>
+                      Top-k Sumber Jawaban
+                    </h3>
+                    <p className="user-card-sub">
+                      Lihat potongan dokumen yang paling relevan untuk jawaban
+                      terakhir (maksimal 3 chunk).
+                    </p>
+                  </div>
+                  <button className="btn-ghost" onClick={clearTopK}>
+                    Clear
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <div>
+                    {hasContext ? (
+                      <span className="badge-context badge-context-yes">
+                        <span>●</span> Konteks: YA
+                      </span>
+                    ) : (
+                      <span className="badge-context badge-context-no">
+                        <span>●</span> Konteks: TIDAK
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 10 }}>
+                    {!topChunks || topChunks.length === 0 ? (
+                      <div
+                        style={{
+                          color: '#6b7280',
+                          fontSize: 13,
+                          background: '#f9fafb',
+                          borderRadius: 10,
+                          border: '1px dashed #d1d5db',
+                          padding: 10,
+                        }}
+                      >
+                        Belum ada sumber relevan untuk jawaban terakhir. Kirim
+                        pertanyaan dulu di kotak chat.
+                      </div>
+                    ) : (
+                      topChunks.map((c, idx) => {
+                        const isExpanded = !!expanded[idx];
+                        const text = c.text || '';
+                        const preview =
+                          text.length > PREVIEW_LENGTH
+                            ? text.slice(0, PREVIEW_LENGTH) + '…'
+                            : text;
+                        return (
+                          <div key={idx} className="chunk-card">
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 8,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontWeight: 600,
+                                  fontSize: 13,
+                                  color: '#111827',
+                                }}
+                              >
+                                {idx + 1}. {c.document_title}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: '#6b7280',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                idx: {c.chunk_index} — sim:{' '}
+                                {c.similarity === null ||
+                                typeof c.similarity === 'undefined'
+                                  ? 'n/a'
+                                  : Number(c.similarity).toFixed(4)}
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 8,
+                                whiteSpace: 'pre-wrap',
+                                fontSize: 13,
+                                color: '#111827',
+                              }}
+                            >
+                              {isExpanded ? text : preview}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 8,
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: 6,
+                              }}
+                            >
+                              {text.length > PREVIEW_LENGTH && (
+                                <button
+                                  className="btn-ghost"
+                                  onClick={() => toggleExpand(idx)}
+                                >
+                                  {isExpanded ? 'View less' : 'View more'}
+                                </button>
+                              )}
+                              <button
+                                className="btn-ghost"
+                                onClick={() =>
+                                  navigator.clipboard.writeText(text)
+                                }
+                              >
+                                Salin isi chunk
+                              </button>
+                              <button
+                                className="btn-ghost"
+                                onClick={() =>
+                                  navigator.clipboard.writeText(
+                                    `${c.document_title} (sim:${c.similarity})`,
+                                  )
+                                }
+                              >
+                                Salin meta
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+
+          {/* Modal Riwayat (list & messages) */}
+          {modalVisible && (
+            <div className="history-modal-backdrop">
+              <div className="history-modal-body fade-in-up">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 10,
+                  }}
+                >
+                  <div>
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: 17,
+                        fontWeight: 600,
+                        color: '#111827',
+                      }}
+                    >
+                      {modalMode === 'list'
+                        ? 'Daftar Riwayat Chat'
+                        : selectedChat?.title || 'Chat'}
+                    </h3>
+                    {modalMode === 'list' ? (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#6b7280',
+                          marginTop: 4,
+                        }}
+                      >
+                        {chats.length} chat ditemukan.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#6b7280',
+                          marginTop: 4,
+                        }}
+                      >
+                        {selectedChat
+                          ? new Date(
+                              selectedChat.created_at,
+                            ).toLocaleString()
+                          : ''}
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    {modalMode === 'messages' && (
+                      <button
+                        className="btn-soft"
+                        onClick={() => {
+                          setModalMode('list');
+                          setSelectedChat(null);
+                          setModalMessages([]);
+                        }}
+                      >
+                        Kembali ke daftar
+                      </button>
+                    )}
+                    <button className="btn-soft" onClick={closeModal}>
+                      Tutup
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 4 }}>
+                  {modalMode === 'list' ? (
+                    // List view
+                    <div>
+                      {loadingChats ? (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: '#6b7280',
+                          }}
+                        >
+                          Memuat riwayat...
+                        </div>
+                      ) : chats.length === 0 ? (
+                        <div
+                          style={{
+                            color: '#6b7280',
+                            fontSize: 13,
+                            background: '#f9fafb',
+                            borderRadius: 10,
+                            border: '1px dashed #d1d5db',
+                            padding: 10,
+                          }}
+                        >
+                          Belum ada riwayat chat tersimpan.
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gap: 8,
+                            marginTop: 4,
+                          }}
+                        >
+                          {chats.map(c => (
+                            <div
+                              key={c.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: 10,
+                                borderRadius: 10,
+                                border: '1px solid #e5e7eb',
+                                background: '#f9fafb',
+                                gap: 8,
+                              }}
+                            >
+                              <div>
+                                <div
+                                  style={{
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    color: '#111827',
+                                  }}
+                                >
+                                  {c.title || 'Chat tanpa judul'}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    color: '#6b7280',
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {new Date(
+                                    c.created_at,
+                                  ).toLocaleString()}
+                                </div>
+                              </div>
+                              <div>
+                                <button
+                                  className="btn-soft"
+                                  onClick={() => openChatMessages(c)}
+                                >
+                                  Buka
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    // Messages view
+                    <div>
+                      {loadingMessages ? (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: '#6b7280',
+                          }}
+                        >
+                          Memuat pesan...
+                        </div>
+                      ) : modalMessages.length === 0 ? (
+                        <div
+                          style={{
+                            color: '#6b7280',
+                            fontSize: 13,
+                            background: '#f9fafb',
+                            borderRadius: 10,
+                            border: '1px dashed #d1d5db',
+                            padding: 10,
+                          }}
+                        >
+                          Tidak ada pesan untuk chat ini.
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                            marginTop: 4,
+                          }}
+                        >
+                          {modalMessages.map((m, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                padding: 10,
+                                borderRadius: 10,
+                                background:
+                                  m.role === 'user'
+                                    ? '#e0edff'
+                                    : '#f4f4f5',
+                                border: '1px solid #e5e7eb',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  whiteSpace: 'pre-wrap',
+                                  fontSize: 13,
+                                  color: '#111827',
+                                }}
+                              >
+                                {m.content}
+                              </div>
+                              <div
+                                style={{
+                                  marginTop: 6,
+                                  fontSize: 11,
+                                  color: '#6b7280',
+                                }}
+                              >
+                                {new Date(
+                                  m.created_at,
+                                ).toLocaleString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
